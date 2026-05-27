@@ -345,9 +345,16 @@
 
             // Parse summary data from columns S-W (rows 8-15)
             const summary = {
+                total_all: { jes: 0, cha: 0, joyce: 0, joh: 0 },
                 credit_card: { total: 0, jes: 0, cha: 0, joyce: 0, joh: 0 },
                 debit_card: { total: 0, jes: 0, cha: 0, joyce: 0, joh: 0 }
             };
+
+            // Row 9: Total of all expenses (cols T=20, U=21, V=22, W=23)
+            summary.total_all.jes = parseFloat(getCellValue(ws, 9, 20)) || 0;
+            summary.total_all.cha = parseFloat(getCellValue(ws, 9, 21)) || 0;
+            summary.total_all.joyce = parseFloat(getCellValue(ws, 9, 22)) || 0;
+            summary.total_all.joh = parseFloat(getCellValue(ws, 9, 23)) || 0;
 
             // Row 12: Credit card (cols S=19, T=20, U=21, V=22, W=23)
             summary.credit_card.total = parseFloat(getCellValue(ws, 12, 19)) || 0;
@@ -474,13 +481,11 @@
         }
 
         function renderSummary(data) {
-            const totals = data.reduce((acc, d) => {
-                acc.total += d.total; acc.jes += d.jes; acc.cha += d.cha; acc.joyce += d.joyce; acc.joh += d.joh;
-                return acc;
-            }, { total: 0, jes: 0, cha: 0, joyce: 0, joh: 0 });
+            const totals = summaryData.total_all || { jes: 0, cha: 0, joyce: 0, joh: 0 };
+            const grandTotal = totals.jes + totals.cha + totals.joyce + totals.joh;
 
             document.getElementById('summaryCards').innerHTML = `
-                <div class="card total"><h3>Total Expenses</h3><div class="amount">${formatCurrency(totals.total)}</div></div>
+                <div class="card total"><h3>Total Expenses</h3><div class="amount">${formatCurrency(grandTotal)}</div></div>
                 <div class="card jes"><h3>JES Total</h3><div class="amount">${formatCurrency(totals.jes)}</div></div>
                 <div class="card cha"><h3>CHA Total</h3><div class="amount">${formatCurrency(totals.cha)}</div></div>
                 <div class="card joyce"><h3>JOYCE Total</h3><div class="amount">${formatCurrency(totals.joyce)}</div></div>
