@@ -95,6 +95,39 @@ def parse_excel():
         if jes_amount == 0 and cha_amount == 0 and joyce_amount == 0 and joh_amount == 0:
             continue
 
+        # Check if transaction name is a person name - look up proper store name
+        person_names = ["jes", "cha", "joyce", "joh"]
+        lower_txn = transaction.lower()
+        is_person_name = any(
+            lower_txn == p or lower_txn.startswith(p + " -") or lower_txn.startswith(p + " ")
+            for p in person_names
+        )
+        display_name = transaction
+        if is_person_name:
+            excel_row_num = row[0].row
+            for back_r in range(excel_row_num - 1, 1, -1):
+                back_txn = ws.cell(back_r, 3).value
+                if back_txn is None:
+                    continue
+                back_str = str(back_txn).strip()
+                if not back_str or back_str.startswith("/"):
+                    continue
+                back_lower = back_str.lower()
+                if any(back_lower == p or back_lower.startswith(p + " -") or back_lower.startswith(p + " ") for p in person_names):
+                    continue
+                # Check if this row has NO amounts (it's a header/store name)
+                bk = ws.cell(back_r, 11).value or 0
+                bl = ws.cell(back_r, 12).value or 0
+                bm = ws.cell(back_r, 13).value or 0
+                bn = ws.cell(back_r, 14).value or 0
+                if isinstance(bk, (int, float)) and isinstance(bl, (int, float)):
+                    back_has_amounts = (bk if isinstance(bk, (int, float)) else 0) + (bl if isinstance(bl, (int, float)) else 0) + (bm if isinstance(bm, (int, float)) else 0) + (bn if isinstance(bn, (int, float)) else 0) > 0
+                else:
+                    back_has_amounts = False
+                if not back_has_amounts:
+                    display_name = back_str
+                break
+
         # Calculate total from individual amounts (more reliable than column E)
         total_amount = jes_amount + cha_amount + joyce_amount + joh_amount
 
@@ -110,7 +143,7 @@ def parse_excel():
         expenses.append({
             "day": current_date_label,
             "dayNum": day_counter,
-            "transaction": transaction,
+            "transaction": display_name,
             "total": round(total_amount, 2),
             "jes": round(jes_amount, 2),
             "cha": round(cha_amount, 2),

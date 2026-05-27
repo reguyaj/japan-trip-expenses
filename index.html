@@ -416,6 +416,35 @@
                 if (!txnStr) continue;
                 if (txnStr.startsWith('/') && /^\/\d+$/.test(txnStr.replace(/\s/g, ''))) continue;
 
+                // Check if this is a person-name row - if so, look up proper store name
+                const personNames = ['jes', 'cha', 'joyce', 'joh'];
+                const lowerTxn = txnStr.toLowerCase();
+                const isPersonName = personNames.some(p => lowerTxn === p || lowerTxn.startsWith(p + ' -') || lowerTxn.startsWith(p + ' '));
+                let displayName = txnStr;
+                if (isPersonName) {
+                    // Look back for a proper store name (row with C value but no K-N amounts)
+                    for (let backR = r - 1; backR >= 0; backR--) {
+                        const backTxn = getCellValue(ws, backR + 1, 3);
+                        if (!backTxn) continue;
+                        const backStr = String(backTxn).trim();
+                        if (!backStr) continue;
+                        if (backStr.startsWith('/')) continue;
+                        const backLower = backStr.toLowerCase();
+                        if (personNames.some(p => backLower === p || backLower.startsWith(p + ' -') || backLower.startsWith(p + ' '))) continue;
+                        // Check if this back row has NO amounts (it's a header/store name)
+                        const bk = getCellValue(ws, backR + 1, 11);
+                        const bl = getCellValue(ws, backR + 1, 12);
+                        const bm = getCellValue(ws, backR + 1, 13);
+                        const bn = getCellValue(ws, backR + 1, 14);
+                        const backHasAmounts = (typeof bk === 'number' ? bk : 0) + (typeof bl === 'number' ? bl : 0) + (typeof bm === 'number' ? bm : 0) + (typeof bn === 'number' ? bn : 0) > 0;
+                        if (!backHasAmounts) {
+                            displayName = backStr;
+                            break;
+                        }
+                        break; // Stop if we hit a row with amounts
+                    }
+                }
+
                 const jesAmount = typeof jesVal === 'number' ? jesVal : 0;
                 const chaAmount = typeof chaVal === 'number' ? chaVal : 0;
                 const joyceAmount = typeof joyceVal === 'number' ? joyceVal : 0;
@@ -437,7 +466,7 @@
                 expenses.push({
                     day: currentDateLabel,
                     dayNum: dayCounter,
-                    transaction: txnStr,
+                    transaction: displayName,
                     total: Math.round(totalAmount * 100) / 100,
                     jes: Math.round(jesAmount * 100) / 100,
                     cha: Math.round(chaAmount * 100) / 100,
