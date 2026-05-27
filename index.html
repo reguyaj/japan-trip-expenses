@@ -398,12 +398,13 @@
                 const chaAmount = typeof chaVal === 'number' ? chaVal : 0;
                 const joyceAmount = typeof joyceVal === 'number' ? joyceVal : 0;
                 const johAmount = typeof johVal === 'number' ? johVal : 0;
-                let totalAmount = typeof total === 'number' ? total : 0;
 
-                if (totalAmount === 0) {
-                    totalAmount = jesAmount + chaAmount + joyceAmount + johAmount;
-                }
-                if (totalAmount === 0 && jesAmount === 0 && chaAmount === 0) continue;
+                // Only include rows that have actual per-person amounts (K/L/M/N)
+                // Rows with only column E values are sub-items/descriptions - skip them
+                if (jesAmount === 0 && chaAmount === 0 && joyceAmount === 0 && johAmount === 0) continue;
+
+                // Calculate total from individual amounts (more reliable than column E)
+                let totalAmount = jesAmount + chaAmount + joyceAmount + johAmount;
 
                 expenses.push({
                     day: currentDateLabel,
