@@ -280,6 +280,7 @@
                         <tr>
                             <th>Day</th>
                             <th>Transaction</th>
+                            <th>Mode</th>
                             <th>Total (₱)</th>
                             <th>JES (₱)</th>
                             <th>CHA (₱)</th>
@@ -288,7 +289,7 @@
                         </tr>
                     </thead>
                     <tbody id="tableBody">
-                        <tr><td colspan="7" class="loading">Loading data...</td></tr>
+                        <tr><td colspan="8" class="loading">Loading data...</td></tr>
                     </tbody>
                     <tfoot id="tableFoot"></tfoot>
                 </table>
@@ -342,6 +343,20 @@
             const expenses = [];
             let currentDateLabel = "";
             let dayCounter = 0;
+
+            // Parse CC/DC row numbers from formulas in T12 and T15
+            const ccRows = new Set();
+            const dcRows = new Set();
+            const t12Cell = ws[XLSX.utils.encode_cell({ r: 11, c: 19 })]; // T12
+            const t15Cell = ws[XLSX.utils.encode_cell({ r: 14, c: 19 })]; // T15
+            if (t12Cell && t12Cell.f) {
+                const matches = t12Cell.f.match(/K(\d+)/g) || [];
+                matches.forEach(m => ccRows.add(parseInt(m.replace('K', ''))));
+            }
+            if (t15Cell && t15Cell.f) {
+                const matches = t15Cell.f.match(/K(\d+)/g) || [];
+                matches.forEach(m => dcRows.add(parseInt(m.replace('K', ''))));
+            }
 
             // Parse summary data from columns S-W (rows 8-15)
             const summary = {
@@ -413,6 +428,12 @@
                 // Calculate total from individual amounts (more reliable than column E)
                 let totalAmount = jesAmount + chaAmount + joyceAmount + johAmount;
 
+                // Determine mode of payment based on row number
+                const excelRow = r + 1;
+                let payment = 'Others';
+                if (ccRows.has(excelRow)) payment = 'CC';
+                else if (dcRows.has(excelRow)) payment = 'DC';
+
                 expenses.push({
                     day: currentDateLabel,
                     dayNum: dayCounter,
@@ -422,6 +443,7 @@
                     cha: Math.round(chaAmount * 100) / 100,
                     joyce: Math.round(joyceAmount * 100) / 100,
                     joh: Math.round(johAmount * 100) / 100,
+                    payment: payment,
                 });
             }
 
@@ -497,15 +519,21 @@
         function renderTable(data) {
             const tbody = document.getElementById('tableBody');
             if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="no-data">No matching transactions</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="8" class="no-data">No matching transactions</td></tr>';
                 document.getElementById('tableFoot').innerHTML = '';
                 return;
             }
+
+            const paymentBadge = (p) => {
+                const colors = { CC: '#e74c3c', DC: '#2980b9', Others: '#27ae60' };
+                return `<span style="background:${colors[p]};color:white;padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:600">${p}</span>`;
+            };
 
             tbody.innerHTML = data.map(d => `
                 <tr>
                     <td><span class="day-badge">${d.day}</span></td>
                     <td>${d.transaction}</td>
+                    <td>${paymentBadge(d.payment)}</td>
                     <td class="amount-cell">${formatCurrency(d.total)}</td>
                     <td class="amount-cell">${d.jes ? formatCurrency(d.jes) : '-'}</td>
                     <td class="amount-cell">${d.cha ? formatCurrency(d.cha) : '-'}</td>
@@ -521,7 +549,7 @@
 
             document.getElementById('tableFoot').innerHTML = `
                 <tr style="font-weight:700; background:#f8f9fa;">
-                    <td colspan="2">TOTAL</td>
+                    <td colspan="3">TOTAL</td>
                     <td class="amount-cell">${formatCurrency(totals.total)}</td>
                     <td class="amount-cell">${formatCurrency(totals.jes)}</td>
                     <td class="amount-cell">${formatCurrency(totals.cha)}</td>

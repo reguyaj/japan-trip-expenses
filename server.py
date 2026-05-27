@@ -8,6 +8,7 @@ View: http://localhost:8080
 import http.server
 import json
 import os
+import re
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -22,6 +23,18 @@ def parse_excel():
     """Parse the Excel file and return structured expense data."""
     wb = openpyxl.load_workbook(EXCEL_FILE, data_only=True)
     ws = wb["Japan Trip"]
+
+    # Load formulas to determine CC/DC rows
+    wb_formulas = openpyxl.load_workbook(EXCEL_FILE, data_only=False)
+    ws_formulas = wb_formulas["Japan Trip"]
+    cc_rows = set()
+    dc_rows = set()
+    cc_formula = ws_formulas.cell(12, 20).value or ""  # T12
+    dc_formula = ws_formulas.cell(15, 20).value or ""  # T15
+    for m in re.findall(r'K(\d+)', cc_formula):
+        cc_rows.add(int(m))
+    for m in re.findall(r'K(\d+)', dc_formula):
+        dc_rows.add(int(m))
 
     expenses = []
     current_date = None
@@ -85,6 +98,15 @@ def parse_excel():
         # Calculate total from individual amounts (more reliable than column E)
         total_amount = jes_amount + cha_amount + joyce_amount + joh_amount
 
+        # Determine mode of payment from CC/DC formula references
+        excel_row = row[0].row
+        if excel_row in cc_rows:
+            payment = "CC"
+        elif excel_row in dc_rows:
+            payment = "DC"
+        else:
+            payment = "Others"
+
         expenses.append({
             "day": current_date_label,
             "dayNum": day_counter,
@@ -94,6 +116,7 @@ def parse_excel():
             "cha": round(cha_amount, 2),
             "joyce": round(joyce_amount, 2),
             "joh": round(joh_amount, 2),
+            "payment": payment,
         })
 
     # Parse summary data from columns S-W (rows 8-15)
