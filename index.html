@@ -280,6 +280,7 @@
                         <tr>
                             <th>Day</th>
                             <th>Transaction</th>
+                            <th>Details</th>
                             <th>Mode</th>
                             <th>Total (₱)</th>
                             <th>JES (₱)</th>
@@ -289,7 +290,7 @@
                         </tr>
                     </thead>
                     <tbody id="tableBody">
-                        <tr><td colspan="8" class="loading">Loading data...</td></tr>
+                        <tr><td colspan="9" class="loading">Loading data...</td></tr>
                     </tbody>
                     <tfoot id="tableFoot"></tfoot>
                 </table>
@@ -328,7 +329,7 @@
                 renderDebtSection();
                 render();
             } catch (e) {
-                document.getElementById('tableBody').innerHTML = `<tr><td colspan="7" class="no-data">Error loading data: ${e.message}</td></tr>`;
+                document.getElementById('tableBody').innerHTML = `<tr><td colspan="9" class="no-data">Error loading data: ${e.message}</td></tr>`;
                 console.error(e);
             }
         }
@@ -385,93 +386,102 @@
             summary.debit_card.joyce = parseFloat(getCellValue(ws, 15, 22)) || 0;
             summary.debit_card.joh = parseFloat(getCellValue(ws, 15, 23)) || 0;
 
-            // Parse expense rows (starting from row 2)
+            // First pass: collect all rows as raw data
+            const allRows = [];
             const range = XLSX.utils.decode_range(ws['!ref']);
             for (let r = 1; r <= range.e.r; r++) {
                 const dateVal = getCellValue(ws, r + 1, 2);  // Column B
                 const transaction = getCellValue(ws, r + 1, 3);  // Column C
-                const total = getCellValue(ws, r + 1, 5);  // Column E
                 const jesVal = getCellValue(ws, r + 1, 11);  // Column K
                 const chaVal = getCellValue(ws, r + 1, 12);  // Column L
                 const joyceVal = getCellValue(ws, r + 1, 13);  // Column M
                 const johVal = getCellValue(ws, r + 1, 14);  // Column N
 
-                // Update date label
-                if (dateVal != null) {
-                    if (dateVal instanceof Date || (typeof dateVal === 'number' && dateVal > 40000)) {
-                        dayCounter++;
-                        let dateObj = dateVal instanceof Date ? dateVal : new Date((dateVal - 25569) * 86400000);
-                        // The year's last 2 digits = actual day of May
-                        const actualDay = dateObj.getFullYear() % 100;
-                        currentDateLabel = `Day ${dayCounter} (May ${actualDay})`;
-                    } else if (typeof dateVal === 'string' && dateVal.trim().toUpperCase() === 'OTHERS') {
-                        dayCounter++;
-                        currentDateLabel = "Others (Pre-booked)";
-                    }
-                    continue;
-                }
-
-                if (!transaction) continue;
-                const txnStr = String(transaction).trim();
-                if (!txnStr) continue;
-                if (txnStr.startsWith('/') && /^\/\d+$/.test(txnStr.replace(/\s/g, ''))) continue;
-
-                // Check if this is a person-name row - if so, look up proper store name
-                const personNames = ['jes', 'cha', 'joyce', 'joh'];
-                const lowerTxn = txnStr.toLowerCase();
-                const isPersonName = personNames.some(p => lowerTxn === p || lowerTxn.startsWith(p + ' -') || lowerTxn.startsWith(p + ' '));
-                let displayName = txnStr;
-                if (isPersonName) {
-                    // Look back for a proper store name (row with C value but no K-N amounts)
-                    for (let backR = r - 1; backR >= 0; backR--) {
-                        const backTxn = getCellValue(ws, backR + 1, 3);
-                        if (!backTxn) continue;
-                        const backStr = String(backTxn).trim();
-                        if (!backStr) continue;
-                        if (backStr.startsWith('/')) continue;
-                        const backLower = backStr.toLowerCase();
-                        if (personNames.some(p => backLower === p || backLower.startsWith(p + ' -') || backLower.startsWith(p + ' '))) continue;
-                        // Check if this back row has NO amounts (it's a header/store name)
-                        const bk = getCellValue(ws, backR + 1, 11);
-                        const bl = getCellValue(ws, backR + 1, 12);
-                        const bm = getCellValue(ws, backR + 1, 13);
-                        const bn = getCellValue(ws, backR + 1, 14);
-                        const backHasAmounts = (typeof bk === 'number' ? bk : 0) + (typeof bl === 'number' ? bl : 0) + (typeof bm === 'number' ? bm : 0) + (typeof bn === 'number' ? bn : 0) > 0;
-                        if (!backHasAmounts) {
-                            displayName = backStr;
-                            break;
-                        }
-                        break; // Stop if we hit a row with amounts
-                    }
-                }
-
                 const jesAmount = typeof jesVal === 'number' ? jesVal : 0;
                 const chaAmount = typeof chaVal === 'number' ? chaVal : 0;
                 const joyceAmount = typeof joyceVal === 'number' ? joyceVal : 0;
                 const johAmount = typeof johVal === 'number' ? johVal : 0;
+                const hasAmounts = jesAmount !== 0 || chaAmount !== 0 || joyceAmount !== 0 || johAmount !== 0;
 
-                // Only include rows that have actual per-person amounts (K/L/M/N)
-                // Rows with only column E values are sub-items/descriptions - skip them
-                if (jesAmount === 0 && chaAmount === 0 && joyceAmount === 0 && johAmount === 0) continue;
+                allRows.push({
+                    excelRow: r + 1,
+                    dateVal,
+                    transaction: transaction ? String(transaction).trim() : '',
+                    jesAmount, chaAmount, joyceAmount, johAmount,
+                    hasAmounts
+                });
+            }
 
-                // Calculate total from individual amounts (more reliable than column E)
-                let totalAmount = jesAmount + chaAmount + joyceAmount + johAmount;
+            // Second pass: build expenses with details
+            const personNames = ['jes', 'cha', 'joyce', 'joh'];
+            for (let i = 0; i < allRows.length; i++) {
+                const row = allRows[i];
 
-                // Determine mode of payment based on row number
-                const excelRow = r + 1;
+                // Update date label if date found (don't skip - row may also have amounts)
+                if (row.dateVal != null) {
+                    if (row.dateVal instanceof Date || (typeof row.dateVal === 'number' && row.dateVal > 40000)) {
+                        dayCounter++;
+                        let dateObj = row.dateVal instanceof Date ? row.dateVal : new Date((row.dateVal - 25569) * 86400000);
+                        const actualDay = dateObj.getFullYear() % 100;
+                        currentDateLabel = `Day ${dayCounter} (May ${actualDay})`;
+                    } else if (typeof row.dateVal === 'string' && row.dateVal.trim().toUpperCase() === 'OTHERS') {
+                        dayCounter++;
+                        currentDateLabel = "Others (Pre-booked)";
+                    }
+                }
+
+                if (!row.transaction) continue;
+                if (!row.hasAmounts) continue;
+
+                // Determine display name (handle person-name rows)
+                const lowerTxn = row.transaction.toLowerCase();
+                const isPersonName = personNames.some(p => lowerTxn === p || lowerTxn.startsWith(p + ' -') || lowerTxn.startsWith(p + ' '));
+                let displayName = row.transaction;
+                if (isPersonName) {
+                    for (let backI = i - 1; backI >= 0; backI--) {
+                        const backRow = allRows[backI];
+                        if (backRow.dateVal != null) break;
+                        if (!backRow.transaction) continue;
+                        if (backRow.transaction.startsWith('/')) continue;
+                        const backLower = backRow.transaction.toLowerCase();
+                        if (personNames.some(p => backLower === p || backLower.startsWith(p + ' -') || backLower.startsWith(p + ' '))) continue;
+                        if (!backRow.hasAmounts) {
+                            displayName = backRow.transaction;
+                            break;
+                        }
+                        break;
+                    }
+                }
+
+                // Collect detail sub-items: all non-amount rows between this row and the next amount row (or day break)
+                const details = [];
+                for (let j = i + 1; j < allRows.length; j++) {
+                    const subRow = allRows[j];
+                    if (subRow.dateVal != null) break; // hit next day
+                    if (subRow.hasAmounts) break; // hit next main transaction
+                    if (!subRow.transaction) continue;
+                    // Skip pure split markers like "/2", "/3", "/4"
+                    if (/^\/\d+\s*$/.test(subRow.transaction)) continue;
+                    details.push(subRow.transaction);
+                }
+
+                // Determine mode of payment
                 let payment = 'Others';
-                if (ccRows.has(excelRow)) payment = 'CC';
-                else if (dcRows.has(excelRow)) payment = 'DC';
+                if (ccRows.has(row.excelRow)) payment = 'CC';
+                else if (dcRows.has(row.excelRow)) payment = 'DC';
+
+                let totalAmount = row.jesAmount + row.chaAmount + row.joyceAmount + row.johAmount;
 
                 expenses.push({
                     day: currentDateLabel,
                     dayNum: dayCounter,
                     transaction: displayName,
+                    details: details.join(', '),
                     total: Math.round(totalAmount * 100) / 100,
-                    jes: Math.round(jesAmount * 100) / 100,
-                    cha: Math.round(chaAmount * 100) / 100,
-                    joyce: Math.round(joyceAmount * 100) / 100,
-                    joh: Math.round(johAmount * 100) / 100,
+                    jes: Math.round(row.jesAmount * 100) / 100,
+                    cha: Math.round(row.chaAmount * 100) / 100,
+                    joyce: Math.round(row.joyceAmount * 100) / 100,
+                    joh: Math.round(row.johAmount * 100) / 100,
                     payment: payment,
                 });
             }
@@ -548,7 +558,7 @@
         function renderTable(data) {
             const tbody = document.getElementById('tableBody');
             if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="no-data">No matching transactions</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="no-data">No matching transactions</td></tr>';
                 document.getElementById('tableFoot').innerHTML = '';
                 return;
             }
@@ -562,6 +572,7 @@
                 <tr>
                     <td><span class="day-badge">${d.day}</span></td>
                     <td>${d.transaction}</td>
+                    <td style="font-size:0.85em;color:#555;max-width:200px">${d.details || '-'}</td>
                     <td>${paymentBadge(d.payment)}</td>
                     <td class="amount-cell">${formatCurrency(d.total)}</td>
                     <td class="amount-cell">${d.jes ? formatCurrency(d.jes) : '-'}</td>
@@ -578,7 +589,7 @@
 
             document.getElementById('tableFoot').innerHTML = `
                 <tr style="font-weight:700; background:#f8f9fa;">
-                    <td colspan="3">TOTAL</td>
+                    <td colspan="4">TOTAL</td>
                     <td class="amount-cell">${formatCurrency(totals.total)}</td>
                     <td class="amount-cell">${formatCurrency(totals.jes)}</td>
                     <td class="amount-cell">${formatCurrency(totals.cha)}</td>
