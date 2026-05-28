@@ -1,7 +1,7 @@
 import openpyxl
 from datetime import datetime
 
-wb = openpyxl.load_workbook('JAPAN EXPENSE.xlsx', data_only=True)
+wb = openpyxl.load_workbook('temp_copy.xlsx', data_only=True)
 ws = wb['Japan Trip']
 
 expenses = []
